@@ -64,7 +64,9 @@
   .list-right{text-align:right;flex-shrink:0}
   .list-amount{font-size:15px;font-weight:700}
   .list-amount.red{color:var(--danger)}.list-amount.green{color:var(--success)}
-  .list-del{font-size:11px;color:var(--danger);background:none;border:none;font-family:inherit;cursor:pointer;margin-top:3px;padding:3px 0;display:block;-webkit-tap-highlight-color:transparent}
+  .list-del{font-size:11px;color:var(--danger);background:none;border:none;font-family:inherit;cursor:pointer;margin-top:3px;padding:3px 0;display:inline;-webkit-tap-highlight-color:transparent}
+  .list-edit{font-size:11px;color:var(--accent);background:none;border:none;font-family:inherit;cursor:pointer;margin-top:3px;padding:3px 4px 3px 0;display:inline;-webkit-tap-highlight-color:transparent}
+  .list-actions{margin-top:3px;display:flex;justify-content:flex-end;gap:6px}
   .month-filter{display:flex;gap:8px;overflow-x:auto;padding:10px 14px 4px;scrollbar-width:none}
   .month-filter::-webkit-scrollbar{display:none}
   .month-chip{flex-shrink:0;padding:5px 13px;border-radius:99px;font-size:13px;font-weight:500;background:var(--surface);border:1.5px solid var(--border);color:var(--muted);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:all .15s}
@@ -139,6 +141,31 @@
     </div>
     <div class="form-group"><label>Monto recibido (₡)</label><input type="number" id="v-monto" placeholder="0" min="0" inputmode="numeric"></div>
     <button class="btn-block btn-success" id="btnAgregarVenta">Registrar venta</button>
+  </div>
+</div>
+
+<!-- EDITAR MODAL -->
+<div class="modal-bg" id="modalEditar">
+  <div class="modal">
+    <button class="modal-close" id="closeEditarModal">×</button>
+    <div class="modal-title" id="editarTitulo">Editar</div>
+    <div id="editarCamposGasto">
+      <div class="form-group"><label>Descripción</label><input type="text" id="e-desc" autocomplete="off"></div>
+      <div class="form-row-2">
+        <div class="form-group"><label>Cantidad</label><input type="number" id="e-cantidad" min="1" inputmode="numeric"></div>
+        <div class="form-group"><label>Categoría</label><select id="e-cat"><option>Materia Prima</option><option>Empaque</option><option>Equipo</option></select></div>
+      </div>
+      <div class="form-group"><label>Monto total (₡)</label><input type="number" id="e-monto-g" placeholder="0" min="0" inputmode="numeric"></div>
+    </div>
+    <div id="editarCamposVenta">
+      <div class="form-group"><label>Descripción</label><input type="text" id="e-desc-v" autocomplete="off"></div>
+      <div class="form-row-2">
+        <div class="form-group"><label>Cantidad</label><input type="number" id="e-cantidad-v" min="1" inputmode="numeric"></div>
+        <div class="form-group"><label>Fecha</label><input type="date" id="e-fecha-v"></div>
+      </div>
+      <div class="form-group"><label>Monto recibido (₡)</label><input type="number" id="e-monto-v" placeholder="0" min="0" inputmode="numeric"></div>
+    </div>
+    <button class="btn-block btn-primary" id="btnGuardarEdicion">Guardar cambios</button>
   </div>
 </div>
 
@@ -258,11 +285,19 @@ function fsAdd(path, data) {
 function fsDelete(path) {
   return fetch(BASE + '/' + path + '?key=' + API_KEY, {method: 'DELETE'});
 }
+function fsUpdate(path, data) {
+  var fields = Object.keys(data).map(function(k){ return 'updateMask.fieldPaths='+k; }).join('&');
+  return fetch(BASE + '/' + path + '?key=' + API_KEY + '&' + fields, {
+    method: 'PATCH', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(objToFields(data))
+  }).then(function(r){ return r.json(); });
+}
 
 // ── STATE ─────────────────────────────────────────────────────────
 var productos = [], activoId = null;
 var batches = [], gastos = [], ventas = [];
 var batchActivo = null, filtroHist = '';
+var editando = null; // {col, id}
 
 // ── HELPERS ───────────────────────────────────────────────────────
 var MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -452,7 +487,10 @@ function itemHTML(m){
     +'<div class="list-icon '+(esV?'venta':'gasto')+'">'+(esV?'💵':catEmoji(m.cat))+'</div>'
     +'<div class="list-body"><div class="list-desc">'+m.desc+'</div><div class="list-meta">'+meta+'</div></div>'
     +'<div class="list-right"><div class="list-amount '+(esV?'green':'red')+'">'+(esV?'+':'−')+fmt(m.monto)+'</div>'
-    +'<button class="list-del" data-col="'+col+'" data-id="'+m.id+'">Eliminar</button></div></div>';
+    +'<div class="list-actions">'
+    +'<button class="list-edit" data-edit-col="'+col+'" data-edit-id="'+m.id+'">Editar</button>'
+    +'<button class="list-del" data-col="'+col+'" data-id="'+m.id+'">Eliminar</button>'
+    +'</div></div></div>';
 }
 function renderResumen(){
   var tG=gastos.reduce(function(s,g){return s+g.monto},0);
@@ -526,6 +564,8 @@ document.addEventListener('click',function(e){
   if (ps){activarProducto(ps.dataset.pid);return}
   var del=e.target.closest('[data-col][data-id]');
   if (del){eliminarItem(del.dataset.col,del.dataset.id);return}
+  var edit=e.target.closest('[data-edit-col][data-edit-id]');
+  if (edit){abrirEditar(edit.dataset.editCol,edit.dataset.editId);return}
   if (e.target.id==='btn-export'){exportCSV();return}
 });
 document.getElementById('btnProductoSel').addEventListener('click',function(){openModal('modalProducto')});
@@ -551,9 +591,61 @@ document.getElementById('btnAgregarGasto').addEventListener('click',agregarGasto
 document.getElementById('btnAgregarVenta').addEventListener('click',agregarVenta);
 document.getElementById('btnBackBatch').addEventListener('click',function(){goTo('batches')});
 document.getElementById('btnEliminarBatch').addEventListener('click',eliminarBatch);
-['modalProducto','modalBatch','modalGasto','modalVenta'].forEach(function(id){
+['modalProducto','modalBatch','modalGasto','modalVenta','modalEditar'].forEach(function(id){
   document.getElementById(id).addEventListener('click',function(e){if(e.target===this)closeModal(id)});
 });
+document.getElementById('closeEditarModal').addEventListener('click',function(){closeModal('modalEditar')});
+document.getElementById('btnGuardarEdicion').addEventListener('click',guardarEdicion);
+
+function abrirEditar(col, id) {
+  var esV = col==='ventas';
+  var item = esV ? ventas.find(function(x){return x.id===id}) : gastos.find(function(x){return x.id===id});
+  if (!item) return;
+  editando = {col:col, id:id};
+  document.getElementById('editarTitulo').textContent = esV ? 'Editar venta' : 'Editar gasto';
+  document.getElementById('editarCamposGasto').style.display = esV ? 'none' : 'block';
+  document.getElementById('editarCamposVenta').style.display = esV ? 'block' : 'none';
+  if (esV) {
+    document.getElementById('e-desc-v').value = item.desc||'';
+    document.getElementById('e-cantidad-v').value = item.cantidad||1;
+    document.getElementById('e-fecha-v').value = item.fecha||today();
+    document.getElementById('e-monto-v').value = item.monto||'';
+  } else {
+    document.getElementById('e-desc').value = item.desc||'';
+    document.getElementById('e-cantidad').value = item.cantidad||1;
+    document.getElementById('e-cat').value = item.cat||'Materia Prima';
+    document.getElementById('e-monto-g').value = item.monto||'';
+  }
+  openModal('modalEditar');
+}
+
+function guardarEdicion() {
+  if (!editando||!activoId) return;
+  var esV = editando.col==='ventas';
+  var data;
+  if (esV) {
+    var desc=document.getElementById('e-desc-v').value.trim()||'Venta';
+    var cantidad=parseInt(document.getElementById('e-cantidad-v').value)||1;
+    var fecha=document.getElementById('e-fecha-v').value||today();
+    var monto=parseInt(document.getElementById('e-monto-v').value);
+    if (!monto||monto<=0){alert('Ingresá un monto válido.');return}
+    data={desc:desc,cantidad:cantidad,fecha:fecha,monto:monto};
+  } else {
+    var desc2=document.getElementById('e-desc').value.trim();
+    var cantidad2=parseInt(document.getElementById('e-cantidad').value)||1;
+    var cat=document.getElementById('e-cat').value;
+    var monto2=parseInt(document.getElementById('e-monto-g').value);
+    if (!desc2){alert('Ingresá una descripción.');return}
+    if (!monto2||monto2<=0){alert('Ingresá un monto válido.');return}
+    data={desc:desc2,cantidad:cantidad2,cat:cat,monto:monto2};
+  }
+  sync('syncing');
+  fsUpdate('productos/'+activoId+'/'+editando.col+'/'+editando.id, data).then(function(){
+    closeModal('modalEditar');
+    editando=null;
+    reload();
+  });
+}
 
 function exportCSV(){
   var rows=['Fecha,Tipo,Descripcion,Cantidad,Categoria,Monto,Batch']
