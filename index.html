@@ -243,8 +243,8 @@ function objToFields(obj) {
 function fsGet(path) {
   return fetch(BASE + '/' + path + '?key=' + API_KEY).then(function(r){ return r.json(); });
 }
-function fsList(path, orderBy) {
-  var url = BASE + '/' + path + '?key=' + API_KEY + (orderBy ? '&orderBy=' + orderBy : '') + '&pageSize=500';
+function fsList(path) {
+  var url = BASE + '/' + path + '?key=' + API_KEY + '&pageSize=500';
   return fetch(url).then(function(r){ return r.json(); }).then(function(d){
     return (d.documents || []).map(docToObj);
   });
@@ -275,7 +275,7 @@ function hideLoading(){document.getElementById('loading').style.display='none'}
 
 // ── LOAD ALL ──────────────────────────────────────────────────────
 function loadAll() {
-  fsList('productos', 'fields.creadoEn').then(function(docs) {
+  fsList('productos', '').then(function(docs) {
     productos = docs;
     if (productos.length && !activoId) activoId = productos[0].id;
     renderProductoBtn();
@@ -293,9 +293,9 @@ function loadAll() {
 function loadProductoData(pid) {
   var base = 'productos/' + pid;
   return Promise.all([
-    fsList(base + '/batches', 'fields.fecha%20desc'),
-    fsList(base + '/gastos', 'fields.fecha%20desc'),
-    fsList(base + '/ventas', 'fields.fecha%20desc')
+    fsList(base + '/batches', ''),
+    fsList(base + '/gastos', ''),
+    fsList(base + '/ventas', '')
   ]).then(function(results) {
     batches = results[0]; gastos = results[1]; ventas = results[2];
   });
